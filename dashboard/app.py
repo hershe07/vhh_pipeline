@@ -55,19 +55,56 @@ def main():
     novel = load_table(tables_dir / "novel_candidates.csv")
     cdr_div = load_table(tables_dir / "cdr_diversity.csv")
     dev = load_table(tables_dir / "developability_screen.csv")
+    extraction = load_table(tables_dir / "domain_extraction_report.csv")
 
     if annotated is None:
         st.error(f"No results found under {tables_dir}. Run scripts/run_pipeline.py first.")
         return
 
     tabs = st.tabs([
-        "Sequence Browser", "CDR Viewer", "CDR Length Combinations",
+        "Domain Extraction", "Sequence Browser", "CDR Viewer", "CDR Length Combinations",
         "Cluster Explorer", "Diversity Statistics", "Novel Candidates",
         "Developability", "Downloads",
     ])
 
-    # ---------------- Sequence Browser ----------------
+    # ---------------- Domain Extraction ----------------
     with tabs[0]:
+        st.subheader("Domain extraction diagnostics")
+        st.caption(
+            "Shows how raw reads were handled before length filtering: reads with no "
+            "detectable VHH domain (dropped), reads with exactly one domain, and "
+            "reads with multiple domains (concatemers/chimeras, each domain extracted "
+            "as its own sequence)."
+        )
+        if extraction is not None and len(extraction):
+            row = extraction.iloc[0]
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("Input reads", int(row["n_input_reads"]))
+            c2.metric("No domain detected", int(row["n_reads_no_domain_detected"]))
+            c3.metric("Single-domain reads", int(row["n_reads_single_domain"]))
+            c4.metric("Multi-domain reads", int(row["n_reads_multi_domain"]))
+
+            st.metric("Total domains extracted", int(row["n_domains_extracted_total"]))
+
+            call_counts = pd.DataFrame({
+                "call": ["no_domain", "single_domain", "multi_domain"],
+                "count": [
+                    int(row["n_reads_no_domain_detected"]),
+                    int(row["n_reads_single_domain"]),
+                    int(row["n_reads_multi_domain"]),
+                ],
+            })
+            fig = px.bar(call_counts, x="call", y="count", title="Raw read domain-content breakdown")
+            st.plotly_chart(fig, use_container_width=True)
+
+            fig_path = results_dir / "figures" / "extracted_domain_length_dist.png"
+            if fig_path.exists():
+                st.image(str(fig_path), caption="Extracted domain length distribution (pre length-filter)")
+        else:
+            st.info("domain_extraction_report.csv not found. Rerun scripts/run_pipeline.py to generate it.")
+
+    # ---------------- Sequence Browser ----------------
+    with tabs[1]:
         st.subheader("Sequence browser")
         search = st.text_input("Search by sequence ID or (sub)sequence")
         view = annotated
@@ -105,7 +142,7 @@ def main():
         st.dataframe(view, use_container_width=True, height=500)
 
     # ---------------- CDR Viewer ----------------
-    with tabs[1]:
+    with tabs[2]:
         st.subheader("CDR viewer & length filters")
         if cdr_table is not None:
             c1, c2, c3 = st.columns(3)
@@ -129,7 +166,7 @@ def main():
             st.info("cdr_table.csv not found.")
 
     # ---------------- CDR Length Combinations ----------------
-    with tabs[2]:
+    with tabs[3]:
         st.subheader("CDR1-CDR2-CDR3 length combinations")
         if combo_df is not None:
             # Force 'combination' to string dtype -- Plotly's client-side type
@@ -150,7 +187,7 @@ def main():
             st.info("cdr_length_combinations.csv not found.")
 
     # ---------------- Cluster Explorer ----------------
-    with tabs[3]:
+    with tabs[4]:
         st.subheader("Cluster explorer")
         if unique_aa is not None and "cluster" in unique_aa.columns:
             cluster_sizes = unique_aa["cluster"].value_counts().reset_index()
@@ -164,7 +201,7 @@ def main():
             st.info("No cluster assignments found in unique_aa_abundance.csv.")
 
     # ---------------- Diversity Statistics ----------------
-    with tabs[4]:
+    with tabs[5]:
         st.subheader("Diversity statistics")
         if cdr_div is not None:
             st.dataframe(cdr_div, use_container_width=True)
@@ -176,7 +213,7 @@ def main():
             st.plotly_chart(fig2, use_container_width=True)
 
     # ---------------- Novel Candidates ----------------
-    with tabs[5]:
+    with tabs[6]:
         st.subheader("Novel / rare / outlier candidates")
         if novel is not None:
             min_score = st.slider("Minimum novelty score", 0.0, 1.0, 0.5, 0.05)
@@ -187,7 +224,7 @@ def main():
             st.info("novel_candidates.csv not found.")
 
     # ---------------- Developability ----------------
-    with tabs[6]:
+    with tabs[7]:
         st.subheader("Developability screening")
         if dev is not None:
             c1, c2, c3, c4 = st.columns(4)
@@ -243,7 +280,7 @@ def main():
             st.info("developability_screen.csv not found.")
 
     # ---------------- Downloads ----------------
-    with tabs[7]:
+    with tabs[8]:
         st.subheader("Downloadable tables & figures")
         for csv_path in sorted(tables_dir.glob("*.csv")):
             st.download_button(
