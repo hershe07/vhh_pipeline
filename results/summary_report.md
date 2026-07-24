@@ -32,5 +32,5 @@
 - **length_filter_report**: {'expected_length': 397, 'tolerance': 0.1, 'min_length': 357, 'max_length': 437, 'n_input': 145739, 'n_passed': 65960, 'n_failed': 79779, 'pct_passed': 45.26}
 - **novel_candidates**: {'n_total': 5244, 'n_singletons': 5215, 'n_cluster_outliers': 372, 'n_rare_cdr_combo': 124, 'n_candidate_novel': 451, 'n_flagged_low_quality_support': 22}
 - **domain_extraction**: {'n_input_reads': 249729, 'n_reads_no_domain_detected': 104099, 'n_reads_single_domain': 145522, 'n_reads_multi_domain': 108, 'n_domains_extracted_total': 145739}
-- **developability_screen**: {'n_screened': 5244, 'n_with_aggregation_prone_region': 1885, 'n_with_odd_cysteine_count': 2233, 'n_flagged_unstable': 1408, 'n_with_glycosylation_site': 587}
+- **structure_prediction**: {'n_attempted': 10, 'n_folded_successfully': 10}
 

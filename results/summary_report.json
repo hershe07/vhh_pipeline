@@ -94,12 +94,9 @@
       "n_reads_multi_domain": 108,
       "n_domains_extracted_total": 145739
     },
-    "developability_screen": {
-      "n_screened": 5244,
-      "n_with_aggregation_prone_region": 1885,
-      "n_with_odd_cysteine_count": 2233,
-      "n_flagged_unstable": 1408,
-      "n_with_glycosylation_site": 587
+    "structure_prediction": {
+      "n_attempted": 10,
+      "n_folded_successfully": 10
     }
   }
 }

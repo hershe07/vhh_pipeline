@@ -1,0 +1,11 @@
+representative_id,fold_success,mean_plddt,pdb_path,confidence_tier
+8797a462-66ed-4e0a-a4b2-2a5ca7b07b70,True,0.5697631862217432,results/structures/8797a462-66ed-4e0a-a4b2-2a5ca7b07b70.pdb,very_low
+4bd02038-31de-4c94-8512-bb8b9568b3d3,True,0.6104754601226993,results/structures/4bd02038-31de-4c94-8512-bb8b9568b3d3.pdb,very_low
+3d95377b-e445-4265-bca8-ace43e194696,True,0.6171287128712877,results/structures/3d95377b-e445-4265-bca8-ace43e194696.pdb,very_low
+57a7b6dc-dc16-456f-936d-f2549f054600,True,0.2684235294117648,results/structures/57a7b6dc-dc16-456f-936d-f2549f054600.pdb,very_low
+47a695f7-4a4e-42a9-ac7f-ba5e570df673,True,0.6123561346362656,results/structures/47a695f7-4a4e-42a9-ac7f-ba5e570df673.pdb,very_low
+7115d3cc-f503-4f10-bbc7-8eea9f0cced9,True,0.6264494382022474,results/structures/7115d3cc-f503-4f10-bbc7-8eea9f0cced9.pdb,very_low
+cc789392-a4cf-4fcc-8f91-c68f92ec9390,True,0.6301678657074342,results/structures/cc789392-a4cf-4fcc-8f91-c68f92ec9390.pdb,very_low
+7c46a60b-6050-4ec2-822b-f88e0662525b,True,0.7512820512820522,results/structures/7c46a60b-6050-4ec2-822b-f88e0662525b.pdb,very_low
+dfdbb46f-4ea5-45d1-b049-58f1ba181d2e,True,0.7032246998284738,results/structures/dfdbb46f-4ea5-45d1-b049-58f1ba181d2e.pdb,very_low
+6415e2dd-6c3d-4472-af67-8092243d7edd,True,0.7847310344827579,results/structures/6415e2dd-6c3d-4472-af67-8092243d7edd.pdb,very_low
