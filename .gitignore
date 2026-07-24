@@ -1,0 +1,9 @@
+data/
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+venv/
+__pycache__/
+*.pyc
+.DS_Store
