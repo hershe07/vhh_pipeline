@@ -22,6 +22,7 @@ from pathlib import Path
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+import streamlit.components.v1 as components
 
 
 def parse_args():
@@ -54,8 +55,9 @@ def main():
     unique_aa = load_table(tables_dir / "unique_aa_abundance.csv")
     novel = load_table(tables_dir / "novel_candidates.csv")
     cdr_div = load_table(tables_dir / "cdr_diversity.csv")
-    dev = load_table(tables_dir / "developability_screen.csv")
+    struct_pred = load_table(tables_dir / "structure_predictions.csv")
     extraction = load_table(tables_dir / "domain_extraction_report.csv")
+    extracted_domains = load_table(tables_dir / "extracted_domains.csv")
 
     if annotated is None:
         st.error(f"No results found under {tables_dir}. Run scripts/run_pipeline.py first.")
@@ -64,7 +66,7 @@ def main():
     tabs = st.tabs([
         "Domain Extraction", "Sequence Browser", "CDR Viewer", "CDR Length Combinations",
         "Cluster Explorer", "Diversity Statistics", "Novel Candidates",
-        "Developability", "Downloads",
+        "Structure Predictions", "Downloads",
     ])
 
     # ---------------- Domain Extraction ----------------
@@ -100,6 +102,46 @@ def main():
             fig_path = results_dir / "figures" / "extracted_domain_length_dist.png"
             if fig_path.exists():
                 st.image(str(fig_path), caption="Extracted domain length distribution (pre length-filter)")
+
+            # -- Interactive length / tolerance preview --
+            # Lets you try different --expected-length / --length-tolerance choices
+            # against the ACTUAL extracted domain lengths, without re-running the
+            # pipeline -- useful for picking values before committing to a full rerun.
+            if extracted_domains is not None and len(extracted_domains):
+                st.markdown("---")
+                st.subheader("Preview: length filter window on extracted domains")
+                data_min, data_max = int(extracted_domains["length"].min()), int(extracted_domains["length"].max())
+
+                mode = st.radio(
+                    "Filter by", ["Expected length \u00b1 tolerance %", "Min/Max range"],
+                    horizontal=True, key="domain_extraction_filter_mode",
+                )
+                if mode == "Expected length \u00b1 tolerance %":
+                    expected = st.number_input("Expected length (bp)", value=397, step=1,
+                                                key="domain_extraction_expected_len")
+                    tolerance_pct = st.slider("Tolerance (%)", 0, 50, 10, key="domain_extraction_tolerance")
+                    delta = expected * tolerance_pct / 100
+                    lo, hi = int(round(expected - delta)), int(round(expected + delta))
+                    st.caption(f"Window: [{lo}, {hi}] bp")
+                else:
+                    lo, hi = st.slider(
+                        "Domain length (bp)", data_min, data_max, (data_min, data_max),
+                        key="domain_extraction_range",
+                    )
+
+                in_window = extracted_domains[
+                    (extracted_domains["length"] >= lo) & (extracted_domains["length"] <= hi)
+                ]
+                pct = 100 * len(in_window) / len(extracted_domains) if len(extracted_domains) else 0.0
+                st.metric(
+                    f"Domains within [{lo}, {hi}] bp",
+                    f"{len(in_window)} / {len(extracted_domains)}",
+                    f"{pct:.1f}%",
+                )
+                fig_preview = px.histogram(extracted_domains, x="length", nbins=60,
+                                            title="Extracted domain lengths (window shown highlighted)")
+                fig_preview.add_vrect(x0=lo, x1=hi, fillcolor="green", opacity=0.15, line_width=0)
+                st.plotly_chart(fig_preview, use_container_width=True)
         else:
             st.info("domain_extraction_report.csv not found. Rerun scripts/run_pipeline.py to generate it.")
 
@@ -223,61 +265,75 @@ def main():
         else:
             st.info("novel_candidates.csv not found.")
 
-    # ---------------- Developability ----------------
+    # ---------------- Structure Predictions ----------------
     with tabs[7]:
-        st.subheader("Developability screening")
-        if dev is not None:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Aggregation-prone hits", int((dev["n_aggregation_prone_regions"] > 0).sum()))
-            c2.metric("Odd cysteine count", int(dev["cysteine_count_odd"].sum()))
-            c3.metric("Flagged unstable", int(dev["is_unstable"].fillna(False).sum()))
-            c4.metric("Glycosylation sites", int((dev["n_glycosylation_sites"] > 0).sum()))
+        st.subheader("Structure predictions (ESMFold, top novel candidates)")
+        st.caption(
+            "Predicted 3D structures for the top-ranked novel candidates, folded via "
+            "the ESM Atlas API on the clean reconstructed VHH domain (FR1-FR4/CDR1-3), "
+            "not the raw translated read. Only candidates with all seven regions "
+            "confidently annotated are eligible -- see structure_prediction.py."
+        )
+        if struct_pred is not None and len(struct_pred):
+            n_ok = int(struct_pred["fold_success"].sum())
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Attempted", len(struct_pred))
+            c2.metric("Folded successfully", n_ok)
+            mean_plddt_overall = struct_pred.loc[struct_pred["fold_success"], "mean_plddt"].mean()
+            c3.metric("Mean pLDDT (successful)", f"{mean_plddt_overall:.1f}" if n_ok else "n/a")
 
-            only_flagged = st.checkbox("Show only sequences with at least one liability flag", value=False)
-            view = dev
-            if only_flagged:
-                view = dev[
-                    (dev["n_aggregation_prone_regions"] > 0)
-                    | (dev["cysteine_count_odd"])
-                    | (dev["is_unstable"].fillna(False))
-                    | (dev["n_glycosylation_sites"] > 0)
-                ]
-            st.write(f"{len(view)} sequences")
-            st.dataframe(view, use_container_width=True, height=400)
-
-            if dev["isoelectric_point"].notna().any():
-                fig = px.scatter(
-                    dev, x="isoelectric_point", y="gravy",
-                    color="cysteine_count_odd" if "cysteine_count_odd" in dev.columns else None,
-                    hover_data=["representative_id", "n_aggregation_prone_regions"],
-                    title="pI vs GRAVY (hydropathy), colored by odd-cysteine flag",
+            ok_df = struct_pred[struct_pred["fold_success"]].sort_values("mean_plddt", ascending=False)
+            if len(ok_df):
+                fig = px.bar(
+                    ok_df, x="representative_id", y="mean_plddt", color="confidence_tier",
+                    title="Mean pLDDT per folded candidate (higher = more confident)",
+                    color_discrete_map={
+                        "very_high": "#2c7a2c", "confident": "#4f81bd",
+                        "low": "#e0a530", "very_low": "#c0504d",
+                    },
                 )
+                fig.add_hline(y=70, line_dash="dot", annotation_text="pLDDT=70 (confident threshold)")
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info(
-                    "Physicochemical columns (pI, GRAVY, etc.) are empty -- Biopython's "
-                    "ProtParam may not be available in this environment."
-                )
 
-            # Cross-reference with Novel Candidates: your practical shortlist is
-            # sequences that are BOTH interesting (novel) and clean (no liability flags).
-            if novel is not None and "candidate_novel" in novel.columns and "representative_id" in dev.columns:
                 st.markdown("---")
-                st.subheader("Shortlist: novel candidates with no developability flags")
-                merged = novel.merge(
-                    dev[["representative_id", "n_aggregation_prone_regions", "cysteine_count_odd", "is_unstable"]],
-                    on="representative_id", how="left",
-                )
-                shortlist = merged[
-                    merged["candidate_novel"]
-                    & (merged["n_aggregation_prone_regions"] == 0)
-                    & (~merged["cysteine_count_odd"].fillna(False))
-                    & (~merged["is_unstable"].fillna(False))
-                ]
-                st.write(f"{len(shortlist)} candidates are both novel and free of flagged liabilities")
-                st.dataframe(shortlist, use_container_width=True, height=350)
+                st.subheader("3D structure viewer")
+                chosen_id = st.selectbox("Select a candidate to view", ok_df["representative_id"].tolist())
+                chosen_row = ok_df[ok_df["representative_id"] == chosen_id].iloc[0]
+                pdb_path = Path(chosen_row["pdb_path"]) if chosen_row["pdb_path"] else None
+                if pdb_path and pdb_path.exists():
+                    pdb_text = pdb_path.read_text()
+                    st.caption(f"pLDDT: {chosen_row['mean_plddt']:.1f} ({chosen_row['confidence_tier']})")
+                    viewer_html = f"""
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/3Dmol/2.0.4/3Dmol-min.js"></script>
+                    <div id="viewer" style="height: 450px; width: 100%; position: relative;"></div>
+                    <script>
+                    let viewer = $3Dmol.createViewer("viewer", {{backgroundColor: "white"}});
+                    let pdbData = `{pdb_text}`;
+                    viewer.addModel(pdbData, "pdb");
+                    viewer.setStyle({{}}, {{cartoon: {{colorscheme: "bfactor"}}}});
+                    viewer.zoomTo();
+                    viewer.render();
+                    </script>
+                    """
+                    components.html(viewer_html, height=470)
+                    st.download_button(
+                        "Download this PDB file", data=pdb_text,
+                        file_name=f"{chosen_id}.pdb",
+                    )
+                else:
+                    st.info("PDB file not found on disk for this candidate.")
+
+            failed = struct_pred[~struct_pred["fold_success"]]
+            if len(failed):
+                st.markdown("---")
+                st.caption(f"{len(failed)} candidate(s) failed to fold (network/API error) -- see table below.")
+                st.dataframe(failed, use_container_width=True)
         else:
-            st.info("developability_screen.csv not found.")
+            st.info(
+                "structure_predictions.csv not found. Either the pipeline was run with "
+                "--skip-structure-prediction, or no candidates passed the complete-domain "
+                "quality gate. Rerun scripts/run_pipeline.py without that flag to generate it."
+            )
 
     # ---------------- Downloads ----------------
     with tabs[8]:

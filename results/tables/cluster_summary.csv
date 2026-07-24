@@ -1,4 +1,5 @@
 cluster,size,is_outlier_cluster
-0,424,False
--1,84,True
-1,19,False
+0,4771,False
+-1,372,True
+1,96,False
+2,5,False

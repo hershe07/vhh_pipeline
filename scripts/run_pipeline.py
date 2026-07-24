@@ -38,8 +38,8 @@ from utils import (
     motif,
     novel_discovery,
     report,
-    developability,
     domain_extraction,
+    structure_prediction,
 )
 
 logging.basicConfig(
@@ -63,6 +63,10 @@ def parse_args():
     p.add_argument("--use-plm-embeddings", action="store_true", help="Use ESM-2 embeddings for clustering (heavy)")
     p.add_argument("--max-n-full-pairwise", type=int, default=3000,
                     help="Guardrail: max N for full O(N^2) pairwise similarity/clustering")
+    p.add_argument("--n-structures", type=int, default=10,
+                    help="Number of top novel candidates to fold via ESMFold (ESM Atlas API)")
+    p.add_argument("--skip-structure-prediction", action="store_true",
+                    help="Skip structure prediction entirely (e.g. if no internet access is available)")
     return p.parse_args()
 
 
@@ -99,6 +103,15 @@ def main():
     extracted_df, extraction_diagnostics = domain_extraction.extract_domains_dataframe(passed_qc)
     io_utils.write_table(pd.DataFrame([extraction_diagnostics]), res_dir / "domain_extraction_report.csv")
     if len(extracted_df):
+        # Save per-domain lengths (not just the aggregate summary) so the dashboard
+        # can offer an interactive length/tolerance filter over the extracted
+        # domains, the same way it does for raw sequences in Sequence Browser --
+        # useful for previewing different --expected-length/--length-tolerance
+        # choices without re-running the pipeline.
+        io_utils.write_table(
+            extracted_df[["read_id", "length", "extracted_from", "domain_index", "n_domains_in_read"]],
+            res_dir / "extracted_domains.csv",
+        )
         qc.plot_length_distribution(
             extracted_df, fig_dir / "extracted_domain_length_dist.png",
             "Extracted domain length distribution (pre length-filter)",
@@ -188,26 +201,6 @@ def main():
     # when clustering ran successfully.
     io_utils.write_table(uniq["unique_aa"].drop(columns=["member_ids"]), res_dir / "unique_aa_abundance.csv")
 
-    # 14b. Developability screening (Section 19 recommended extension) -- run on every
-    # unique amino-acid sequence, not just candidates, since it's cheap; the dashboard/
-    # spreadsheet can be sorted or filtered by these columns for top candidates.
-    dev_col = "protein" if "protein" in uniq["unique_aa"].columns else None
-    if dev_col:
-        dev_screen_df = developability.screen_dataframe(uniq["unique_aa"], protein_col=dev_col)
-        io_utils.write_table(
-            dev_screen_df.drop(columns=["member_ids"]) if "member_ids" in dev_screen_df.columns else dev_screen_df,
-            res_dir / "developability_screen.csv",
-        )
-        dev_summary = {
-            "n_screened": len(dev_screen_df),
-            "n_with_aggregation_prone_region": int((dev_screen_df["n_aggregation_prone_regions"] > 0).sum()),
-            "n_with_odd_cysteine_count": int(dev_screen_df["cysteine_count_odd"].sum()),
-            "n_flagged_unstable": int(dev_screen_df["is_unstable"].fillna(False).sum()),
-            "n_with_glycosylation_site": int((dev_screen_df["n_glycosylation_sites"] > 0).sum()),
-        }
-    else:
-        dev_summary = {}
-
     # 12. Diversity
     cdr_div_df = diversity.cdr_diversity_table(cdr_table)
     io_utils.write_table(cdr_div_df, res_dir / "cdr_diversity.csv")
@@ -248,6 +241,23 @@ def main():
         read_aux["is_rare"] = False
     read_aux = read_aux.rename(columns={"read_id": "representative_id", "is_rare": "has_rare_cdr_combo"})
 
+    # complete_domain + reconstructed_domain: whether ANARCI/fallback found ALL
+    # SEVEN regions (not just CDR3), and the clean concatenated domain sequence
+    # from just those regions -- used to gate and source sequences for structure
+    # prediction below, since a confident CDR3 alone does not guarantee FR1/FR2
+    # weren't lost to a frameshift artifact (see structure_prediction.py).
+    _regions = ["FR1", "CDR1", "FR2", "CDR2", "FR3", "CDR3", "FR4"]
+    domain_lookup = cdr_table[["read_id"] + _regions].copy()
+    domain_lookup["complete_domain"] = domain_lookup[_regions].notna().all(axis=1)
+    domain_lookup["reconstructed_domain"] = domain_lookup.apply(
+        lambda r: "".join(r[c] for c in _regions) if r["complete_domain"] else None, axis=1
+    )
+    domain_lookup = domain_lookup.rename(columns={"read_id": "representative_id"})
+    read_aux = read_aux.merge(
+        domain_lookup[["representative_id", "complete_domain", "reconstructed_domain"]],
+        on="representative_id", how="left",
+    )
+
     novel_input = uniq["unique_aa"].merge(read_aux, on="representative_id", how="left")
     novel_flagged = novel_discovery.flag_candidates(
         novel_input,
@@ -256,6 +266,31 @@ def main():
     )
     io_utils.write_table(novel_flagged, res_dir / "novel_candidates.csv")
     novel_summary = novel_discovery.summarize_novel_candidates(novel_flagged)
+
+    # 19b. Structure prediction on top candidates (Section 19 recommended extension).
+    # Uses the CLEAN reconstructed domain (FR1..FR4/CDR1..3 concatenated), not the
+    # raw translated ORF, and only among complete_domain==True sequences -- see
+    # structure_prediction.select_top_candidates docstring for why.
+    struct_dir = outdir / "structures"
+    if not args.skip_structure_prediction:
+        top_candidates = structure_prediction.select_top_candidates(
+            novel_flagged, uniq["unique_aa"], n=args.n_structures,
+            protein_col="reconstructed_domain",
+        )
+        if len(top_candidates):
+            struct_results = structure_prediction.predict_structures(
+                top_candidates, protein_col="reconstructed_domain", outdir=struct_dir,
+            )
+            io_utils.write_table(struct_results, res_dir / "structure_predictions.csv")
+            struct_summary = {
+                "n_attempted": len(top_candidates),
+                "n_folded_successfully": int(struct_results["fold_success"].sum()),
+            }
+        else:
+            logger.warning("No candidates available for structure prediction (none passed the quality gate).")
+            struct_summary = {"n_attempted": 0, "n_folded_successfully": 0}
+    else:
+        struct_summary = {}
 
     # 17. Summary report
     final_report = report.build_summary_report(
@@ -276,7 +311,7 @@ def main():
         extra={"orf_report": orf_report, "length_filter_report": len_report,
                "novel_candidates": novel_summary,
                "domain_extraction": extraction_diagnostics,
-               "developability_screen": dev_summary},
+               "structure_prediction": struct_summary},
     )
     report.write_report(final_report, outdir)
     logger.info("Pipeline complete. Outputs in %s", outdir)

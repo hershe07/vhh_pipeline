@@ -1,0 +1,105 @@
+{
+  "funnel": {
+    "initial_reads": 249746,
+    "after_qc": 249729,
+    "after_length_filter": 65960,
+    "valid_vhh_sequences": 5278,
+    "pct_retained_overall": 2.11
+  },
+  "uniqueness": {
+    "unique_nucleotide_sequences": 5262,
+    "unique_amino_acid_sequences": 5244,
+    "unique_cdr3_sequences": 4907,
+    "unique_cdr_length_combinations": 183
+  },
+  "diversity_metrics": {
+    "nt_level": {
+      "n_unique_sequences": 5262,
+      "n_total_reads": 5278,
+      "n_singletons": 5247,
+      "pct_singletons_of_unique": 99.71,
+      "pct_reads_in_top10": 0.4
+    },
+    "aa_level": {
+      "n_unique_sequences": 5244,
+      "n_total_reads": 5278,
+      "n_singletons": 5215,
+      "pct_singletons_of_unique": 99.45,
+      "pct_reads_in_top10": 0.47
+    },
+    "cdr_level": [
+      {
+        "label": "CDR1",
+        "richness": 4766,
+        "shannon_entropy": 8.326639865655899,
+        "simpson_diversity": 0.9989297655706038,
+        "pielou_evenness": 0.9831599517256895,
+        "n_observations": 5167
+      },
+      {
+        "label": "CDR2",
+        "richness": 4700,
+        "shannon_entropy": 8.404125245210919,
+        "simpson_diversity": 0.9997493809342004,
+        "pielou_evenness": 0.9939455211770145,
+        "n_observations": 5167
+      },
+      {
+        "label": "CDR3",
+        "richness": 4907,
+        "shannon_entropy": 8.475919321808066,
+        "simpson_diversity": 0.999783316201517,
+        "pielou_evenness": 0.9973525997207606,
+        "n_observations": 5167
+      }
+    ]
+  },
+  "cluster_stats": {
+    "n_clusters": 3,
+    "n_outliers": 372
+  },
+  "extra": {
+    "orf_report": {
+      "n_input": 65960,
+      "n_valid_orf": 10601,
+      "n_invalid_orf": 55359,
+      "pct_valid": 16.07,
+      "invalid_reasons": {
+        "internal_stop_codon": 55359,
+        "too_short": 0
+      }
+    },
+    "length_filter_report": {
+      "expected_length": 397,
+      "tolerance": 0.1,
+      "min_length": 357,
+      "max_length": 437,
+      "n_input": 145739,
+      "n_passed": 65960,
+      "n_failed": 79779,
+      "pct_passed": 45.26
+    },
+    "novel_candidates": {
+      "n_total": 5244,
+      "n_singletons": 5215,
+      "n_cluster_outliers": 372,
+      "n_rare_cdr_combo": 124,
+      "n_candidate_novel": 451,
+      "n_flagged_low_quality_support": 22
+    },
+    "domain_extraction": {
+      "n_input_reads": 249729,
+      "n_reads_no_domain_detected": 104099,
+      "n_reads_single_domain": 145522,
+      "n_reads_multi_domain": 108,
+      "n_domains_extracted_total": 145739
+    },
+    "developability_screen": {
+      "n_screened": 5244,
+      "n_with_aggregation_prone_region": 1885,
+      "n_with_odd_cysteine_count": 2233,
+      "n_flagged_unstable": 1408,
+      "n_with_glycosylation_site": 587
+    }
+  }
+}
