@@ -39,6 +39,7 @@ from utils import (
     novel_discovery,
     report,
     developability,
+    domain_extraction,
 )
 
 logging.basicConfig(
@@ -87,13 +88,30 @@ def main():
     qc_report_df = qc.qc_report(df, passed_qc)
     io_utils.write_table(qc_report_df, res_dir / "qc_report.csv")
 
-    # 3. Length filtering
+    # 2.5 Domain extraction (default, not optional) -- rather than judging each raw
+    # read's validity by its total length, pull out the actual VHH domain
+    # sub-sequence(s) it contains (via conserved FR1/FR4 framework anchors), and
+    # run length filtering on the EXTRACTED domain length, not the raw read length.
+    # This recovers reads with flanking vector/tag/adapter sequence and correctly
+    # splits concatemers/chimeras into their individual domains, instead of
+    # discarding the whole read for being the "wrong" total length. Reads with no
+    # detectable domain anchors at all are dropped here (see domain_extraction.py).
+    extracted_df, extraction_diagnostics = domain_extraction.extract_domains_dataframe(passed_qc)
+    io_utils.write_table(pd.DataFrame([extraction_diagnostics]), res_dir / "domain_extraction_report.csv")
+    if len(extracted_df):
+        qc.plot_length_distribution(
+            extracted_df, fig_dir / "extracted_domain_length_dist.png",
+            "Extracted domain length distribution (pre length-filter)",
+            args.expected_length,
+        )
+
+    # 3. Length filtering (now operating on extracted domain sequences)
     min_len, max_len = length_filter.compute_length_window(args.expected_length, args.length_tolerance)
-    qc.plot_length_distribution(passed_qc, fig_dir / "length_before_filter.png",
+    qc.plot_length_distribution(extracted_df, fig_dir / "length_before_filter.png",
                                  "Length distribution (before length filter)",
                                  args.expected_length, min_len, max_len)
     passed_len, failed_len, len_report = length_filter.filter_by_length(
-        passed_qc, args.expected_length, args.length_tolerance
+        extracted_df, args.expected_length, args.length_tolerance
     )
     qc.plot_length_distribution(passed_len, fig_dir / "length_after_filter.png",
                                  "Length distribution (after length filter)",
@@ -257,6 +275,7 @@ def main():
         cluster_stats=cluster_stats,
         extra={"orf_report": orf_report, "length_filter_report": len_report,
                "novel_candidates": novel_summary,
+               "domain_extraction": extraction_diagnostics,
                "developability_screen": dev_summary},
     )
     report.write_report(final_report, outdir)
