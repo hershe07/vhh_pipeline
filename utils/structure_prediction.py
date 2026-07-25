@@ -79,10 +79,16 @@ def fold_sequence(protein: str, max_retries: int = 2, retry_delay_s: float = 3.0
 
 def mean_plddt_from_pdb(pdb_text: str) -> float:
     """
-    ESMFold/AlphaFold2 convention: per-residue pLDDT (0-100) is stored in
-    the B-factor column of each ATOM record. Averages over all atoms
+    ESMFold/AlphaFold2 convention: per-residue pLDDT is stored in the
+    B-factor column of each ATOM record. Averages over all atoms
     (equivalently, since pLDDT is per-residue, over all residues weighted
     by atom count -- a minor approximation, fine for a summary statistic).
+
+    The ESM Atlas API returns this on a 0-1 fractional scale in practice,
+    NOT the 0-100 scale AlphaFold2 conventionally uses -- auto-detects
+    which scale is in play (rather than hardcoding an assumption) so this
+    keeps working correctly if that ever changes, and always returns a
+    0-100 value for consistent downstream interpretation/thresholds.
     """
     values = []
     for line in pdb_text.splitlines():
@@ -92,7 +98,13 @@ def mean_plddt_from_pdb(pdb_text: str) -> float:
                 values.append(b_factor)
             except ValueError:
                 continue
-    return sum(values) / len(values) if values else float("nan")
+    if not values:
+        return float("nan")
+    mean_raw = sum(values) / len(values)
+    # If every value is <= ~1.5, this is a 0-1 fractional scale -- rescale to 0-100.
+    if max(values) <= 1.5:
+        return mean_raw * 100
+    return mean_raw
 
 
 def predict_structures(
