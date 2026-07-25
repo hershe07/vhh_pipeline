@@ -19,6 +19,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+import matplotlib.pyplot as plt
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
@@ -40,6 +41,7 @@ from utils import (
     report,
     domain_extraction,
     structure_prediction,
+    framework_mutations,
 )
 
 logging.basicConfig(
@@ -154,6 +156,42 @@ def main():
     if len(combo_df):
         cdr_length_analysis.plot_combination_bar(combo_df, fig_dir / "cdr_combination_bar.png")
         cdr_length_analysis.plot_combination_heatmap(cdr_table, fig_dir / "cdr23_heatmap.png")
+
+    # 8b. Framework mutation / deviation analysis (reference-free: compares every
+    # sequence against a repertoire-built consensus for each framework region,
+    # not an external reference -- see framework_mutations.py docstring).
+    quality_lookup = annotated[["read_id", "mean_qscore"]]
+    fw_mutations_df, fw_position_var_df, fw_seq_summary_df = framework_mutations.build_framework_mutation_table(
+        cdr_table, quality_lookup=quality_lookup
+    )
+    io_utils.write_table(fw_mutations_df, res_dir / "framework_mutations.csv")
+    io_utils.write_table(fw_position_var_df, res_dir / "framework_position_variability.csv")
+    io_utils.write_table(fw_seq_summary_df, res_dir / "framework_mutation_summary.csv")
+    if len(fw_position_var_df):
+        fig, ax = plt.subplots(figsize=(9, 4))
+        colors_map = {"FR1": "#4f81bd", "FR2": "#c0504d", "FR3": "#9bbb59", "FR4": "#8064a2"}
+        offset = 0
+        xticks, xlabels = [], []
+        for region in ["FR1", "FR2", "FR3", "FR4"]:
+            sub = fw_position_var_df[fw_position_var_df["region"] == region].sort_values("position")
+            xs = sub["position"] + offset
+            ax.bar(xs, sub["entropy"], color=colors_map[region], label=region)
+            xticks.extend(xs.tolist())
+            xlabels.extend(sub["position"].tolist())
+            offset += sub["position"].max() + 2 if len(sub) else 0
+        ax.set_xlabel("Position (within region, concatenated FR1->FR4)")
+        ax.set_ylabel("Shannon entropy (nats)")
+        ax.set_title("Framework position variability (repertoire-wide)")
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(fig_dir / "framework_position_variability.png", dpi=300)
+        fig.savefig(fig_dir / "framework_position_variability.pdf")
+        plt.close(fig)
+    fw_summary = {
+        "n_total_deviations": len(fw_mutations_df),
+        "n_sequences_with_deviation": int((fw_seq_summary_df["n_framework_deviations"] > 0).sum()),
+        "n_sequences_with_length_variant_region": int(fw_seq_summary_df["has_length_variant_region"].sum()),
+    }
 
     # 9. Unique sequence detection
     uniq = unique_seqs.unique_nt_and_aa(annotated)
@@ -311,6 +349,7 @@ def main():
         extra={"orf_report": orf_report, "length_filter_report": len_report,
                "novel_candidates": novel_summary,
                "domain_extraction": extraction_diagnostics,
+               "framework_mutations": fw_summary,
                "structure_prediction": struct_summary},
     )
     report.write_report(final_report, outdir)

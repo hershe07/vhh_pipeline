@@ -58,6 +58,9 @@ def main():
     struct_pred = load_table(tables_dir / "structure_predictions.csv")
     extraction = load_table(tables_dir / "domain_extraction_report.csv")
     extracted_domains = load_table(tables_dir / "extracted_domains.csv")
+    fw_mutations = load_table(tables_dir / "framework_mutations.csv")
+    fw_position_var = load_table(tables_dir / "framework_position_variability.csv")
+    fw_seq_summary = load_table(tables_dir / "framework_mutation_summary.csv")
 
     if annotated is None:
         st.error(f"No results found under {tables_dir}. Run scripts/run_pipeline.py first.")
@@ -65,7 +68,7 @@ def main():
 
     tabs = st.tabs([
         "Domain Extraction", "Sequence Browser", "CDR Viewer", "CDR Length Combinations",
-        "Cluster Explorer", "Diversity Statistics", "Novel Candidates",
+        "Framework Mutations", "Cluster Explorer", "Diversity Statistics", "Novel Candidates",
         "Structure Predictions", "Downloads",
     ])
 
@@ -228,8 +231,55 @@ def main():
         else:
             st.info("cdr_length_combinations.csv not found.")
 
-    # ---------------- Cluster Explorer ----------------
+    # ---------------- Framework Mutations ----------------
     with tabs[4]:
+        st.subheader("Framework mutation / deviation analysis")
+        st.caption(
+            "Reference-free: every sequence is compared against a CONSENSUS built from this "
+            "repertoire's own framework regions (FR1-FR4), not an external reference. A deviation "
+            "that's rare across the repertoire AND on a low-quality read is likely a sequencing "
+            "error; one that recurs across many independent reads is more likely a real variant."
+        )
+        if fw_mutations is not None and fw_position_var is not None and fw_seq_summary is not None:
+            n_with_dev = int((fw_seq_summary["n_framework_deviations"] > 0).sum())
+            n_len_variant = int(fw_seq_summary["has_length_variant_region"].sum())
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total deviations flagged", len(fw_mutations))
+            c2.metric("Sequences with >=1 deviation", f"{n_with_dev} / {len(fw_seq_summary)}")
+            c3.metric("Sequences with a length-variant region", n_len_variant)
+            st.caption(
+                "'Length-variant region' sequences have an indel in that framework region "
+                "relative to the repertoire's most common length, so position-wise comparison "
+                "isn't meaningful there -- they're excluded from the deviation count above."
+            )
+
+            if len(fw_position_var):
+                fig = px.bar(
+                    fw_position_var, x="position", y="entropy", color="region",
+                    title="Per-position variability across FR1-FR4 (higher = less conserved)",
+                    color_discrete_map={"FR1": "#4f81bd", "FR2": "#c0504d", "FR3": "#9bbb59", "FR4": "#8064a2"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.markdown("---")
+            st.subheader("Flagged deviations")
+            min_freq, max_freq = 1, int(fw_mutations["deviation_frequency"].max()) if len(fw_mutations) else 1
+            freq_filter = st.slider(
+                "Show deviations occurring at most this many times in the repertoire "
+                "(low = rarer = more likely error OR more interesting if real)",
+                min_freq, max_freq, min(5, max_freq),
+            )
+            search_id = st.text_input("Filter by sequence ID (optional)", key="fw_mut_search")
+            view = fw_mutations[fw_mutations["deviation_frequency"] <= freq_filter]
+            if search_id:
+                view = view[view["read_id"].astype(str).str.contains(search_id, case=False, na=False)]
+            st.write(f"{len(view)} deviations shown")
+            st.dataframe(view, use_container_width=True, height=400)
+        else:
+            st.info("framework_mutations.csv not found. Rerun scripts/run_pipeline.py to generate it.")
+
+    # ---------------- Cluster Explorer ----------------
+    with tabs[5]:
         st.subheader("Cluster explorer")
         if unique_aa is not None and "cluster" in unique_aa.columns:
             cluster_sizes = unique_aa["cluster"].value_counts().reset_index()
@@ -243,7 +293,7 @@ def main():
             st.info("No cluster assignments found in unique_aa_abundance.csv.")
 
     # ---------------- Diversity Statistics ----------------
-    with tabs[5]:
+    with tabs[6]:
         st.subheader("Diversity statistics")
         if cdr_div is not None:
             st.dataframe(cdr_div, use_container_width=True)
@@ -255,7 +305,7 @@ def main():
             st.plotly_chart(fig2, use_container_width=True)
 
     # ---------------- Novel Candidates ----------------
-    with tabs[6]:
+    with tabs[7]:
         st.subheader("Novel / rare / outlier candidates")
         if novel is not None:
             min_score = st.slider("Minimum novelty score", 0.0, 1.0, 0.5, 0.05)
@@ -266,7 +316,7 @@ def main():
             st.info("novel_candidates.csv not found.")
 
     # ---------------- Structure Predictions ----------------
-    with tabs[7]:
+    with tabs[8]:
         st.subheader("Structure predictions (ESMFold, top novel candidates)")
         st.caption(
             "Predicted 3D structures for the top-ranked novel candidates, folded via "
@@ -336,7 +386,7 @@ def main():
             )
 
     # ---------------- Downloads ----------------
-    with tabs[8]:
+    with tabs[9]:
         st.subheader("Downloadable tables & figures")
         for csv_path in sorted(tables_dir.glob("*.csv")):
             st.download_button(
